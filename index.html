@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vidnest: turn one video into many Shorts</title>
+<style>
+  :root{--bg:#f4f6fb;--card:#fff;--ink:#1b2250;--soft:#5b6389;--line:#dfe3f0;--accent:#f5b301;--good:#1f8a5b;--bad:#b3261e;color-scheme:light;
+    box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10142b;--card:#1a2040;--ink:#eef0fb;--soft:#a4abcf;--line:#2d3562;--good:#4fd39b;--bad:#ff8a80;color-scheme:dark}}
+  :root[data-theme="dark"]{--bg:#10142b;--card:#1a2040;--ink:#eef0fb;--soft:#a4abcf;--line:#2d3562;--good:#4fd39b;--bad:#ff8a80;color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:28px 18px 60px}
+  h1{font-size:clamp(1.9rem,6vw,2.8rem);line-height:1.08;margin:0 0 6px;font-weight:800;letter-spacing:-.02em}
+  h2{font-size:1.1rem;margin:0 0 8px}
+  .lede,.soft{color:var(--soft)}
+  .lede{margin:0 0 18px;max-width:60ch}
+  .drop{display:block;padding:34px 18px;text-align:center;border:2px dashed var(--ink);border-radius:10px;background:var(--card);cursor:pointer}
+  .drop.over{background:var(--accent);color:#1b2250}
+  button,input,select,textarea{font:inherit;color:var(--ink)}
+  button{padding:8px 14px;border:2px solid var(--ink);border-radius:6px;background:var(--card);cursor:pointer;font-weight:600}
+  button:hover{background:var(--line)}
+  button:disabled{opacity:.5;cursor:wait}
+  button.primary{background:var(--ink);color:var(--bg)}
+  button.danger{border-color:var(--bad);color:var(--bad)}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  input,select,textarea{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);max-width:100%}
+  input[type=range]{padding:0;width:100%}
+  label{display:flex;flex-direction:column;gap:3px;font-size:.85rem;color:var(--soft)}
+  .stage{display:grid;grid-template-columns:1fr 200px;gap:14px;align-items:start}
+  video{width:100%;max-height:360px;background:#000;border-radius:8px}
+  canvas{width:100%;aspect-ratio:9/16;background:#000;border-radius:8px;display:block}
+  .cap{font-size:.8rem;color:var(--soft);text-align:center;margin-top:4px}
+  .tl{position:relative;height:26px;margin:12px 0;background:var(--line);border-radius:6px;overflow:hidden}
+  .blk{position:absolute;top:0;bottom:0;background:var(--accent);color:#1b2250;font-size:.75rem;font-weight:700;display:grid;place-items:center;border-right:1px solid var(--bg)}
+  .tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:12px 0}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:8px 0}
+  .row label{flex:1 1 110px}
+  #status{min-height:1.5em;margin:8px 0;color:var(--soft)} #status.err{color:var(--bad);font-weight:600}
+  .sh{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+  .sh.on{border:2px solid var(--ink)}
+  .sh header{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .len,.est{color:var(--soft);font-size:.85rem;margin:4px 0 0}
+  .warn{color:var(--bad)}
+  textarea{width:100%;resize:vertical}
+  footer{margin-top:28px;color:var(--soft);font-size:.8rem}
+  @media(max-width:640px){.stage{grid-template-columns:1fr}canvas{max-width:200px;margin:0 auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Vidnest</h1>
+  <h2 style="font-size:1.4rem;margin:0 0 8px">Turn one video into many Shorts.</h2>
+  <p class="lede">Drop your video, let the tool pick moments or cut them yourself, add a voice-over, and export vertical clips. Your video stays on your computer and is never uploaded.</p>
+
+  <label class="drop" id="drop" tabindex="0">
+    <input type="file" id="file" accept="video/*" hidden>
+    <strong>Drop a video here</strong><br><span class="soft">or click to choose a file (MP4 works best)</span>
+  </label>
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <div id="app" hidden>
+    <div class="stage">
+      <video id="v" controls playsinline></video>
+      <div><canvas id="pc" width="270" height="480"></canvas><div class="cap">Short preview (vertical 9:16)</div></div>
+    </div>
+    <div class="tl" id="tl" aria-label="Where your shorts sit in the video"></div>
+
+    <div class="tools">
+      <div class="box">
+        <h2>Auto-create shorts</h2>
+        <p class="soft" style="margin:0 0 6px;font-size:.88rem">Picks the most active stretches of audio, so it finds energetic moments, but it doesn’t understand the content. Always review the cuts.</p>
+        <div class="row">
+          <label>Length<select id="alen"><option>20</option><option>30</option><option selected>45</option><option>60</option></select></label>
+          <label>How many<input type="number" id="acount" value="5" min="1" max="12"></label>
+          <button class="primary" id="autoBtn">Auto-create</button>
+        </div>
+      </div>
+      <div class="box">
+        <h2>Cut it yourself</h2>
+        <p class="soft" style="margin:0 0 6px;font-size:.88rem">Move the video to where a short should start, then add it. Fine-tune the times below.</p>
+        <div class="row">
+          <label>Length<select id="mlen"><option>15</option><option>30</option><option selected>45</option><option>60</option></select></label>
+          <button id="addBtn">+ Add short at current time</button>
+        </div>
+      </div>
+      <div class="box" id="voBox">
+        <h2>Voice-over settings</h2>
+        <div class="row">
+          <label>Voice<select id="voice"></select></label>
+          <label>Speed<input type="range" id="rate" min="0.7" max="1.4" step="0.05" value="1"></label>
+        </div>
+        <p class="soft" style="margin:0;font-size:.85rem">Voices come from your device. Install more in your system language settings for Hindi, Telugu and others.</p>
+      </div>
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <footer>Use only videos you own or have permission to edit. This tool doesn’t download from YouTube; upload your own file. Exporting records the clip in real time, so keep this tab open and visible. Voice-over plays in the preview; the exported file keeps the video’s original audio.</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const v = $("v"), pc = $("pc"), pctx = pc.getContext("2d");
+let shorts = [], nextId = 1, active = null, file = null, actx, gain, dest, stopState = null, voices = [];
+
+const fmt = t => { t = Math.max(0, t); return Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0"); };
+const say = (m, err) => { $("status").textContent = m; $("status").className = err ? "err" : ""; };
+
+// ---------- loading ----------
+function loadFile(f) {
+  if (!f || !f.type.startsWith("video/")) { say("Please choose a video file.", 1); return; }
+  file = f; stopAll(); shorts = []; active = null;
+  v.src = URL.createObjectURL(f);
+  say("Loading video…");
+}
+v.addEventListener("loadedmetadata", () => { $("app").hidden = false; say(`Loaded “${file.name}” (${fmt(v.duration)}). Auto-create shorts or add your own.`); render(); });
+v.addEventListener("error", () => say("This browser can’t play that file. Convert it to MP4 (H.264) and try again.", 1));
+$("file").addEventListener("change", e => loadFile(e.target.files[0]));
+const dz = $("drop");
+dz.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+["dragenter", "dragover"].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
+window.addEventListener("drop", e => loadFile(e.dataTransfer.files[0]));
+
+// ---------- vertical preview ----------
+function drawFrame(c, W, H, crop) {
+  const vw = v.videoWidth, vh = v.videoHeight; if (!vw) return;
+  const sc = Math.max(W / vw, H / vh), sw = W / sc, sh = H / sc;
+  c.drawImage(v, (vw - sw) * crop / 100, (vh - sh) / 2, sw, sh, 0, 0, W, H);
+}
+function paint() { const s = shorts.find(x => x.id === active); drawFrame(pctx, 270, 480, s ? s.crop : 50); }
+function loop() { paint(); if (!v.paused && !v.ended) requestAnimationFrame(loop); }
+["seeked", "loadeddata", "timeupdate"].forEach(e => v.addEventListener(e, paint));
+v.addEventListener("play", () => { ensureAudio(); actx.resume(); loop(); });
+
+// ---------- audio routing (so we can lower the video under a voice-over and record it) ----------
+function ensureAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = actx.createMediaElementSource(v);
+  gain = actx.createGain(); dest = actx.createMediaStreamDestination();
+  src.connect(gain); gain.connect(actx.destination); gain.connect(dest);
+}
+function seekTo(t) {
+  return new Promise(r => { if (Math.abs(v.currentTime - t) < 0.02) return r(); v.addEventListener("seeked", () => r(), { once: true }); v.currentTime = t; });
+}
+
+// ---------- voice-over ----------
+function loadVoices() {
+  if (!("speechSynthesis" in window)) { $("voBox").hidden = true; return; }
+  voices = speechSynthesis.getVoices().sort((a, b) => a.lang.localeCompare(b.lang));
+  const sel = $("voice"); sel.replaceChildren();
+  voices.forEach(x => { const o = document.createElement("option"); o.value = x.voiceURI; o.textContent = `${x.name} (${x.lang})`; sel.append(o); });
+  const pref = voices.find(x => /^en-IN/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang));
+  if (pref) sel.value = pref.voiceURI;
+}
+if ("speechSynthesis" in window) { speechSynthesis.onvoiceschanged = loadVoices; }
+loadVoices();
+function speak(text) {
+  const u = new SpeechSynthesisUtterance(text), vo = voices.find(x => x.voiceURI === $("voice").value);
+  if (vo) { u.voice = vo; u.lang = vo.lang; }
+  u.rate = +$("rate").value; speechSynthesis.speak(u);
+}
+
+// ---------- playing a short ----------
+function stopAll() {
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  v.pause(); if (gain) gain.gain.value = 1;
+  if (stopState) { cancelAnimationFrame(stopState.raf); stopState = null; }
+}
+async function playShort(s, withVO) {
+  stopAll(); active = s.id; ensureAudio(); await actx.resume(); await seekTo(s.start);
+  render(true);
+  stopState = { raf: 0 };
+  v.play();
+  if (withVO && s.script.trim()) { gain.gain.value = 0.15; speak(s.script); }
+  const tick = () => { if (!stopState) return; if (v.currentTime >= s.end || v.ended) { stopAll(); return; } stopState.raf = requestAnimationFrame(tick); };
+  tick();
+}
+
+// ---------- auto-create ----------
+async function auto() {
+  const L = +$("alen").value, N = Math.max(1, Math.min(12, +$("acount").value || 5)), dur = v.duration;
+  if (dur < L + 1) { say("The video is shorter than the chosen length. Pick a shorter length.", 1); return; }
+  if (shorts.length && !confirm("Replace your current shorts with new ones?")) return;
+  $("autoBtn").disabled = true; say("Analysing the audio…");
+  await new Promise(r => setTimeout(r, 30));
+  let bins = null, method = "the most active stretches of audio";
+  if (file.size <= 250 * 1024 * 1024) {
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const ab = await ac.decodeAudioData(await file.arrayBuffer()); ac.close();
+      const d = ab.getChannelData(0), sr = ab.sampleRate, n = Math.ceil(ab.duration);
+      bins = new Float64Array(n);
+      for (let i = 0; i < n; i++) { let sum = 0, c = 0; for (let j = i * sr, e = Math.min(d.length, j + sr); j < e; j += 8) { sum += d[j] * d[j]; c++; } bins[i] = c ? Math.sqrt(sum / c) : 0; }
+    } catch (e) { bins = null; }
+  }
+  const picks = [];
+  if (bins && bins.length >= L) {
+    const pre = [0]; for (const b of bins) pre.push(pre[pre.length - 1] + b);
+    const cand = []; for (let s = 0; s + L <= bins.length; s++) cand.push({ s, sc: pre[s + L] - pre[s] });
+    cand.sort((a, b) => b.sc - a.sc);
+    for (const c of cand) { if (picks.length >= N) break; if (picks.every(p => Math.abs(p - c.s) >= L)) picks.push(c.s); }
+  } else {
+    method = "evenly spaced parts of the video (audio analysis wasn’t possible for this file)";
+    const gap = (dur - L) / Math.max(1, N - 1);
+    for (let i = 0; i < N; i++) picks.push(N === 1 ? 0 : i * gap);
+  }
+  picks.sort((a, b) => a - b);
+  shorts = picks.map(p => ({ id: nextId++, start: +p.toFixed(1), end: +Math.min(dur, p + L).toFixed(1), crop: 50, script: "" }));
+  active = shorts[0] && shorts[0].id;
+  $("autoBtn").disabled = false;
+  say(`Created ${shorts.length} shorts from ${method}. Preview each one and adjust the times.`);
+  render();
+}
+$("autoBtn").addEventListener("click", auto);
+$("addBtn").addEventListener("click", () => {
+  const L = +$("mlen").value, s = Math.min(v.currentTime, Math.max(0, v.duration - 1));
+  const sh = { id: nextId++, start: +s.toFixed(1), end: +Math.min(v.duration, s + L).toFixed(1), crop: 50, script: "" };
+  shorts.push(sh); active = sh.id; render();
+});
+
+// ---------- the list of shorts ----------
+function upd(d, s) {
+  const len = s.end - s.start;
+  d.querySelector(".len").textContent = `${fmt(s.start)} to ${fmt(s.end)} · ${len.toFixed(1)} s`;
+  const words = s.script.trim() ? s.script.trim().split(/\s+/).length : 0, est = words / (2.5 * +$("rate").value), e = d.querySelector(".est");
+  e.className = "est" + (est > len ? " warn" : "");
+  e.textContent = words ? `Voice-over is about ${est.toFixed(0)} s long` + (est > len ? ", which is longer than this short. Shorten the text or lengthen the clip." : ".") : "";
+}
+function drawTl() {
+  const tl = $("tl"); tl.replaceChildren();
+  shorts.forEach((s, i) => { const b = document.createElement("div"); b.className = "blk"; b.style.left = s.start / v.duration * 100 + "%"; b.style.width = Math.max(.8, (s.end - s.start) / v.duration * 100) + "%"; b.textContent = i + 1; tl.append(b); });
+}
+function render(keepFocus) {
+  const list = $("list"); list.replaceChildren();
+  if (!shorts.length) { const p = document.createElement("p"); p.className = "soft"; p.textContent = "No shorts yet. Use Auto-create or add one at the current time."; list.append(p); drawTl(); return; }
+  shorts.forEach((s, i) => {
+    const d = document.createElement("article"); d.className = "sh" + (s.id === active ? " on" : ""); d.dataset.id = s.id;
+    d.innerHTML = `<header><strong>Short ${i + 1}</strong><span class="len"></span></header>
+      <div class="row">
+        <label>Start (seconds)<input type="number" step="0.1" min="0" data-k="start"></label><button data-a="ss">Use current time</button>
+        <label>End (seconds)<input type="number" step="0.1" min="0" data-k="end"></label><button data-a="se">Use current time</button>
+      </div>
+      <label>Crop position (left to right)<input type="range" min="0" max="100" data-k="crop"></label>
+      <label style="margin-top:8px">Voice-over text<textarea rows="2" data-k="script" placeholder="Type what the voice should say over this short"></textarea></label>
+      <p class="est"></p>
+      <div class="row">
+        <button data-a="prev">▶ Preview</button><button data-a="vo">🔊 Voice-over</button><button data-a="stop">■ Stop</button>
+        <button class="primary" data-a="exp">⬇ Export vertical clip</button><button class="danger" data-a="del">Delete</button>
+      </div>`;
+    ["start", "end", "crop", "script"].forEach(k => { d.querySelector(`[data-k="${k}"]`).value = s[k]; });
+    list.append(d); upd(d, s);
+  });
+  drawTl(); paint();
+}
+const find = el => { const d = el.closest(".sh"); return d && { d, s: shorts.find(x => x.id === +d.dataset.id) }; };
+$("list").addEventListener("input", e => {
+  const f = find(e.target), k = e.target.dataset.k; if (!f || !k) return;
+  f.s[k] = k === "script" ? e.target.value : parseFloat(e.target.value) || 0;
+  active = f.s.id; upd(f.d, f.s); drawTl(); paint();
+});
+$("list").addEventListener("change", e => {
+  const f = find(e.target), k = e.target.dataset.k; if (!f || (k !== "start" && k !== "end")) return;
+  const s = f.s; s.start = Math.max(0, Math.min(s.start, v.duration - 1)); s.end = Math.min(v.duration, Math.max(s.end, s.start + 1));
+  f.d.querySelector('[data-k="start"]').value = s.start; f.d.querySelector('[data-k="end"]').value = s.end; upd(f.d, s); drawTl();
+});
+$("list").addEventListener("click", e => {
+  const a = e.target.dataset.a, f = find(e.target); if (!a || !f) return; const s = f.s;
+  if (a === "ss") { s.start = +Math.min(v.currentTime, s.end - 1).toFixed(1); f.d.querySelector('[data-k="start"]').value = s.start; upd(f.d, s); drawTl(); }
+  else if (a === "se") { s.end = +Math.max(v.currentTime, s.start + 1).toFixed(1); f.d.querySelector('[data-k="end"]').value = s.end; upd(f.d, s); drawTl(); }
+  else if (a === "prev") playShort(s, false);
+  else if (a === "vo") { if (!s.script.trim()) { say("Type the voice-over text for this short first.", 1); return; } playShort(s, true); }
+  else if (a === "stop") stopAll();
+  else if (a === "del") { shorts = shorts.filter(x => x !== s); if (active === s.id) active = null; render(); }
+  else if (a === "exp") exportShort(s, e.target);
+});
+
+// ---------- export (records the vertical crop in real time) ----------
+async function exportShort(s, btn) {
+  if (!window.MediaRecorder) { say("Exporting needs Chrome or Edge on a computer.", 1); return; }
+  stopAll(); active = s.id; ensureAudio(); await actx.resume();
+  const cv = document.createElement("canvas"); cv.width = 720; cv.height = 1280; const c = cv.getContext("2d");
+  const types = ["video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  const mime = types.find(t => MediaRecorder.isTypeSupported(t)) || "";
+  const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
+  const chunks = []; rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise(r => rec.onstop = r);
+  btn.disabled = true; await seekTo(s.start); gain.gain.value = 1; drawFrame(c, 720, 1280, s.crop);
+  rec.start(500); v.play();
+  await new Promise(res => {
+    const t = () => {
+      drawFrame(c, 720, 1280, s.crop); paint();
+      say(`Exporting… about ${Math.max(0, s.end - v.currentTime).toFixed(0)} s left. Keep this tab open and visible.`);
+      if (v.currentTime >= s.end || v.ended) return res();
+      requestAnimationFrame(t);
+    }; t();
+  });
+  v.pause(); rec.stop(); await done; btn.disabled = false;
+  const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
+  const name = `short-${shorts.indexOf(s) + 1}.${ext}`, blob = new Blob(chunks, { type: rec.mimeType || mime || "video/webm" });
+  let dl = null;
+  try { dl = window.claude && await window.claude.use("downloads"); } catch (e) { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename: name, data: blob }); say(`Saved ${name}.`); }
+    catch (e) { say(e && e.code === "declined" ? "Save cancelled. Click Export again to retry." : "Couldn’t save the file. Try again.", 1); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = name; document.body.append(a); a.click(); a.remove();
+  say(`Saved ${name} to your downloads folder.`);
+}
+</script>
+</body>
+</html>
