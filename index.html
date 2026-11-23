@@ -147,7 +147,17 @@ function ensureAudio() {
   src.connect(gain); gain.connect(actx.destination); gain.connect(dest);
 }
 function seekTo(t) {
-  return new Promise(r => { if (Math.abs(v.currentTime - t) < 0.02) return r(); v.addEventListener("seeked", () => r(), { once: true }); v.currentTime = t; });
+  return new Promise((resolve, reject) => {
+    if (Math.abs(v.currentTime - t) < 0.02) return resolve();
+    let settled = false;
+    const cleanup = () => { clearTimeout(timer); v.removeEventListener("seeked", onSeek); v.removeEventListener("error", onError); };
+    const finish = (fn, value) => { if (settled) return; settled = true; cleanup(); fn(value); };
+    const onSeek = () => finish(resolve);
+    const onError = () => finish(reject, new Error("Could not seek to this clip. Try another video format."));
+    const timer = setTimeout(() => finish(reject, new Error("Video seeking timed out. Try again or convert the file to MP4 (H.264).")), 10000);
+    v.addEventListener("seeked", onSeek, { once: true }); v.addEventListener("error", onError, { once: true });
+    try { v.currentTime = t; } catch (e) { finish(reject, e); }
+  });
 }
 
 // ---------- voice-over ----------
