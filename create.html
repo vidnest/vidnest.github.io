@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vidnest Create: script to video</title>
+<style>
+  :root{--bg:#f4f6fb;--card:#fff;--ink:#1b2250;--soft:#5b6389;--line:#dfe3f0;--accent:#f5b301;--bad:#b3261e;color-scheme:light;
+    box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10142b;--card:#1a2040;--ink:#eef0fb;--soft:#a4abcf;--line:#2d3562;--bad:#ff8a80;color-scheme:dark}}
+  :root[data-theme="dark"]{--bg:#10142b;--card:#1a2040;--ink:#eef0fb;--soft:#a4abcf;--line:#2d3562;--bad:#ff8a80;color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:1000px;margin:0 auto;padding:24px 18px 60px}
+  h1{font-size:clamp(1.9rem,6vw,2.8rem);line-height:1.08;margin:0 0 4px;font-weight:800;letter-spacing:-.02em}
+  h2{font-size:1.1rem;margin:0 0 8px}
+  a{color:var(--ink);font-weight:600}
+  .soft{color:var(--soft)} .small{font-size:.85rem}
+  button,input,select,textarea{font:inherit;color:var(--ink)}
+  button{padding:8px 14px;border:2px solid var(--ink);border-radius:6px;background:var(--card);cursor:pointer;font-weight:600}
+  button:hover{background:var(--line)} button:disabled{opacity:.5;cursor:wait}
+  button.primary{background:var(--ink);color:var(--bg)} button.danger{border-color:var(--bad);color:var(--bad)}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  input,select,textarea{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);max-width:100%}
+  textarea{width:100%;resize:vertical}
+  label{display:flex;flex-direction:column;gap:3px;font-size:.85rem;color:var(--soft)}
+  .grid{display:grid;grid-template-columns:1fr 320px;gap:18px;align-items:start;margin-top:14px}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:8px 0}
+  .row label{flex:1 1 130px}
+  .side{position:sticky;top:12px}
+  canvas{width:100%;background:#000;border-radius:8px;display:block}
+  #status{min-height:1.5em;margin:8px 0;color:var(--soft)} #status.err{color:var(--bad);font-weight:600}
+  .sc{display:grid;grid-template-columns:90px 1fr;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px}
+  .th{width:90px;height:90px;border-radius:6px;background:var(--line);object-fit:cover;display:grid;place-items:center;font-size:.75rem;color:var(--soft);text-align:center}
+  .st{font-size:.8rem;color:var(--soft)} .st.fail{color:var(--bad)}
+  footer{margin-top:24px;color:var(--soft);font-size:.8rem}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}.side{position:static;order:-1}canvas{max-width:260px;margin:0 auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Vidnest Create</h1>
+  <p class="soft" style="margin:0 0 4px">Paste a script. Get scenes with images and captions, then export a full video and ready-made Shorts. <a href="index.html">← Cut a long video instead</a></p>
+
+  <div class="grid">
+    <div>
+      <div class="box">
+        <h2>1. Your script</h2>
+        <textarea id="script" rows="7" placeholder="Paste or type your script. Leave a blank line between scenes, or let Vidnest group every two sentences into a scene."></textarea>
+        <div class="row">
+          <label>Format<select id="fmt"><option value="v">Vertical 9:16 (Shorts)</option><option value="h">Landscape 16:9 (full video)</option></select></label>
+          <label>Images from<select id="src"><option value="ai">AI-generated (Pollinations)</option><option value="stock">Stock photos (Pexels, free key)</option><option value="own">My own photos</option></select></label>
+        </div>
+        <label id="keyBox" hidden>Pexels API key (free at pexels.com/api, saved in this browser only)<input type="password" id="pkey" autocomplete="off"></label>
+        <div class="row"><button class="primary" id="build">Build scenes</button><button id="genAll" disabled>Get images for all scenes</button>
+          <label style="flex:0 0 auto">Add my photos<input type="file" id="photos" accept="image/*" multiple></label></div>
+      </div>
+
+      <div class="box">
+        <h2>2. Voice, sound and export</h2>
+        <div class="row">
+          <label>Voice (preview)<select id="voice"></select></label>
+          <label>Speed<input type="range" id="rate" min="0.7" max="1.4" step="0.05" value="1"></label>
+          <label>Music or voice file (optional)<input type="file" id="audio" accept="audio/*"></label>
+        </div>
+        <div class="row">
+          <button id="prev">▶ Preview</button><button id="prevVo">🔊 Preview with voice-over</button><button id="stop">■ Stop</button>
+        </div>
+        <div class="row">
+          <button class="primary" id="full">⬇ Make full video</button>
+          <label style="flex:0 0 130px">Short length (s)<select id="smax"><option>30</option><option selected>45</option><option>60</option></select></label>
+          <button class="primary" id="shorts">⬇ Make Shorts from it</button>
+        </div>
+      </div>
+      <p id="status" role="status" aria-live="polite">Paste a script and click Build scenes.</p>
+      <div id="list"></div>
+    </div>
+
+    <aside class="side"><canvas id="cv" width="720" height="1280"></canvas><p class="small soft" style="text-align:center;margin:6px 0 0">Live preview</p></aside>
+  </div>
+
+  <footer>
+    Images: AI pictures come from Pollinations and stock photos from Pexels, only if you choose them; check each service’s current terms before publishing. Don’t use random photos from Google Images. AI images can be wrong or odd, so check every scene. Exported videos have captions and any audio file you add; the built-in voice plays in the preview only. Exporting records in real time, so keep this tab open and visible.
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const SIZES = { v: [720, 1280], h: [1280, 720] };
+let scenes = [], nextId = 1, playing = false, stopFlag = false, audioBuf = null, voices = [];
+const say = (m, err) => { $("status").textContent = m; $("status").className = err ? "err" : ""; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const wait = async ms => { const e = performance.now() + ms; while (performance.now() < e && !stopFlag) await sleep(100); };
+
+// ---------- helpers ----------
+const est = t => Math.min(12, Math.max(3, t.trim().split(/\s+/).length / 2.4 + 0.6));
+const STOP = new Set("the a an and or but of to in on at for with from by is are was were be been this that these those it its as into about your you we our they their i he she his her not no do does did have has had will would can could should so if then than also just very more most".split(" "));
+const kw = q => q.toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).sort((a, b) => b.length - a.length).slice(0, 3).join(" ") || q;
+function splitScript(t) {
+  t = t.trim(); if (!t) return [];
+  let blocks = t.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  if (blocks.length < 2) {
+    const sents = t.replace(/\n/g, " ").split(/(?<=[.!?।])\s+/).filter(Boolean); blocks = [];
+    for (let i = 0; i < sents.length; i += 2) blocks.push(sents.slice(i, i + 2).join(" "));
+  }
+  return blocks;
+}
+function setFormat(f) { [cv.width, cv.height] = SIZES[f]; cv.style.maxWidth = f === "v" ? "300px" : "100%"; idle(); }
+
+// ---------- drawing ----------
+function caption(t, W, H) {
+  const fs = Math.round(W > H ? H * 0.06 : W * 0.062);
+  ctx.font = `700 ${fs}px system-ui,"Segoe UI",sans-serif`; ctx.textAlign = "center";
+  const maxW = W * 0.86, lines = []; let cur = "";
+  for (const w of t.split(/\s+/)) { const tt = cur ? cur + " " + w : w; if (ctx.measureText(tt).width > maxW && cur) { lines.push(cur); cur = w; } else cur = tt; }
+  if (cur) lines.push(cur);
+  const shown = lines.slice(0, 6), lh = fs * 1.25, bh = shown.length * lh + fs * 0.6, y0 = H - bh - H * 0.06;
+  ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(W * 0.04, y0, W * 0.92, bh);
+  ctx.fillStyle = "#fff"; shown.forEach((l, i) => ctx.fillText(l, W / 2, y0 + fs * 0.95 + i * lh));
+}
+function drawScene(s, p) {
+  const W = cv.width, H = cv.height;
+  if (s.bmp) {
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+    const sc = Math.max(W / s.bmp.width, H / s.bmp.height) * (1 + 0.08 * p), w = s.bmp.width * sc, h = s.bmp.height * sc;
+    ctx.drawImage(s.bmp, (W - w) / 2, (H - h) / 2, w, h);
+  } else { const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#2b3680"); g.addColorStop(1, "#10142b"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  caption(s.text, W, H);
+}
+function idle() { if (scenes[0]) drawScene(scenes[0], 0); else { ctx.fillStyle = "#10142b"; ctx.fillRect(0, 0, cv.width, cv.height); } }
+
+// ---------- images ----------
+async function fetchBitmap(url, opts) {
+  const r = await fetch(url, opts); if (!r.ok) throw new Error("HTTP " + r.status);
+  const b = await r.blob(); return { bmp: await createImageBitmap(b), url: URL.createObjectURL(b) };
+}
+function setImg(s, res) { if (s.url) URL.revokeObjectURL(s.url); s.bmp = res.bmp; s.url = res.url; }
+async function loadImage(s) {
+  s.status = "loading"; s.err = ""; paintCard(s);
+  const f = $("fmt").value, src = $("src").value, tall = f === "v";
+  try {
+    let res;
+    if (src === "ai") {
+      const u = `https://image.pollinations.ai/prompt/${encodeURIComponent(s.q + ", high quality photo, no text")}?width=${tall ? 576 : 1024}&height=${tall ? 1024 : 576}&nologo=true&seed=${Math.floor(Math.random() * 99999)}`;
+      res = await fetchBitmap(u);
+    } else if (src === "stock") {
+      const key = $("pkey").value.trim(); if (!key) throw new Error("Add your free Pexels key above");
+      const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(kw(s.q))}&per_page=6&orientation=${tall ? "portrait" : "landscape"}`, { headers: { Authorization: key } });
+      if (!r.ok) throw new Error("Pexels said HTTP " + r.status);
+      const ph = (await r.json()).photos || []; if (!ph.length) throw new Error("No photo found; change the image idea");
+      const p = ph[Math.floor(Math.random() * Math.min(4, ph.length))];
+      res = await fetchBitmap(tall ? p.src.portrait : p.src.landscape);
+    } else throw new Error("Use ‘Use my photo’ on this scene or ‘Add my photos’");
+    setImg(s, res); s.status = "ok";
+  } catch (e) { s.status = "fail"; s.err = String(e.message || e); }
+  paintCard(s); idle();
+}
+async function genAll() {
+  $("genAll").disabled = true;
+  for (let i = 0; i < scenes.length; i++) { say(`Getting image ${i + 1} of ${scenes.length}…`); await loadImage(scenes[i]); await sleep(400); }
+  $("genAll").disabled = false;
+  const bad = scenes.filter(s => s.status === "fail").length;
+  say(bad ? `${bad} scene(s) have no image. Read the note on each, fix the image idea, then click New image.` : "Images ready. Preview, then export.", !!bad);
+}
+async function useFile(s, file) { try { setImg(s, { bmp: await createImageBitmap(file), url: URL.createObjectURL(file) }); s.status = "ok"; } catch (e) { s.status = "fail"; s.err = "Couldn’t read that photo"; } paintCard(s); idle(); }
+
+// ---------- scenes UI ----------
+function paintCard(s) {
+  const c = document.getElementById("sc" + s.id); if (!c) return;
+  const th = c.querySelector(".th"), st = c.querySelector(".st");
+  if (s.url) { th.replaceWith(Object.assign(document.createElement("img"), { className: "th", src: s.url, alt: "" })); }
+  st.className = "st" + (s.status === "fail" ? " fail" : "");
+  st.textContent = { loading: "Getting image…", ok: "Image ready", fail: s.err, "": "No image yet" }[s.status || ""] || "";
+}
+function render() {
+  const list = $("list"); list.replaceChildren();
+  scenes.forEach((s, i) => {
+    const d = document.createElement("article"); d.className = "sc"; d.id = "sc" + s.id; d.dataset.id = s.id;
+    d.innerHTML = `<div class="th">No image</div><div>
+      <strong>Scene ${i + 1}</strong> <span class="st"></span>
+      <label>What you say (shown as caption)<textarea rows="2" data-k="text"></textarea></label>
+      <div class="row"><label>Image idea<input type="text" data-k="q"></label><label style="flex:0 0 90px">Seconds<input type="number" min="1" max="30" step="0.5" data-k="dur"></label></div>
+      <div class="row"><button data-a="img">New image</button><label style="flex:0 0 auto">Use my photo<input type="file" accept="image/*" data-a="file"></label><button class="danger" data-a="del">Delete</button></div></div>`;
+    ["text", "q", "dur"].forEach(k => { d.querySelector(`[data-k="${k}"]`).value = s[k]; });
+    $("list").append(d); paintCard(s);
+  });
+  $("genAll").disabled = !scenes.length; idle();
+}
+const sceneOf = el => { const d = el.closest(".sc"); return d && scenes.find(x => x.id === +d.dataset.id); };
+$("list").addEventListener("input", e => {
+  const s = sceneOf(e.target), k = e.target.dataset.k; if (!s || !k) return;
+  if (k === "dur") { s.dur = parseFloat(e.target.value) || 3; s.auto = false; }
+  else { s[k] = e.target.value; if (k === "text" && s.auto) { s.dur = +est(s.text).toFixed(1); e.target.closest(".sc").querySelector('[data-k="dur"]').value = s.dur; } if (k === "text" && s.qAuto) { s.q = s.text.slice(0, 90); e.target.closest(".sc").querySelector('[data-k="q"]').value = s.q; } if (k === "q") s.qAuto = false; }
+  drawScene(s, 0);
+});
+$("list").addEventListener("click", e => {
+  const s = sceneOf(e.target), a = e.target.dataset.a; if (!s) return;
+  if (a === "img") loadImage(s);
+  if (a === "del") { scenes = scenes.filter(x => x !== s); render(); }
+});
+$("list").addEventListener("change", e => { const s = sceneOf(e.target); if (s && e.target.dataset.a === "file" && e.target.files[0]) useFile(s, e.target.files[0]); });
+$("photos").addEventListener("change", async e => {
+  const fs = [...e.target.files]; if (!fs.length || !scenes.length) { say("Build scenes first, then add photos.", 1); return; }
+  for (let i = 0; i < scenes.length; i++) await useFile(scenes[i], fs[i % fs.length]);
+  say(`Added ${fs.length} photo(s) across ${scenes.length} scenes.`);
+});
+$("build").addEventListener("click", () => {
+  const blocks = splitScript($("script").value);
+  if (!blocks.length) { say("Type or paste a script first.", 1); return; }
+  if (scenes.length && !confirm("Replace the current scenes?")) return;
+  scenes.forEach(s => s.url && URL.revokeObjectURL(s.url));
+  scenes = blocks.map(t => ({ id: nextId++, text: t, q: t.slice(0, 90), qAuto: true, dur: +est(t).toFixed(1), auto: true, status: "", bmp: null, url: "" }));
+  render(); say(`${scenes.length} scenes built (about ${scenes.reduce((a, s) => a + s.dur, 0).toFixed(0)} s). Click “Get images for all scenes”, or add your photos.`);
+});
+$("genAll").addEventListener("click", genAll);
+$("src").addEventListener("change", () => { $("keyBox").hidden = $("src").value !== "stock"; });
+$("fmt").addEventListener("change", () => setFormat($("fmt").value));
+try { $("pkey").value = localStorage.getItem("vidnest-pexels") || ""; } catch (e) {}
+$("pkey").addEventListener("change", () => { try { localStorage.setItem("vidnest-pexels", $("pkey").value.trim()); } catch (e) {} });
+
+// ---------- voice ----------
+function loadVoices() {
+  if (!("speechSynthesis" in window)) return;
+  voices = speechSynthesis.getVoices().sort((a, b) => a.lang.localeCompare(b.lang));
+  const sel = $("voice"); sel.replaceChildren();
+  voices.forEach(x => { const o = document.createElement("option"); o.value = x.voiceURI; o.textContent = `${x.name} (${x.lang})`; sel.append(o); });
+  const pref = voices.find(x => /^en-IN/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang)); if (pref) sel.value = pref.voiceURI;
+}
+if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
+function speakAsync(text) {
+  return new Promise(res => {
+    if (!("speechSynthesis" in window)) return res();
+    const u = new SpeechSynthesisUtterance(text), vo = voices.find(x => x.voiceURI === $("voice").value);
+    if (vo) { u.voice = vo; u.lang = vo.lang; } u.rate = +$("rate").value; u.onend = u.onerror = () => res(); speechSynthesis.speak(u);
+  });
+}
+$("audio").addEventListener("change", async e => {
+  const f = e.target.files[0]; audioBuf = null; if (!f) return;
+  try { const ac = new (window.AudioContext || window.webkitAudioContext)(); audioBuf = await ac.decodeAudioData(await f.arrayBuffer()); ac.close(); say(`Audio added (${audioBuf.duration.toFixed(0)} s). It will be mixed into exported videos.`); }
+  catch (err) { say("Couldn’t read that audio file. Try MP3 or WAV.", 1); }
+});
+
+// ---------- playing and exporting ----------
+async function play(seq, voice) {
+  stopFlag = false; playing = true; let cur = null;
+  const loop = () => { if (!playing) return; if (cur) drawScene(cur.s, Math.min(1, (performance.now() - cur.t0) / (cur.s.dur * 1000))); requestAnimationFrame(loop); };
+  loop();
+  for (let i = 0; i < seq.length && !stopFlag; i++) { cur = { s: seq[i], t0: performance.now() }; await Promise.all([voice ? speakAsync(seq[i].text) : 0, wait(seq[i].dur * 1000)]); }
+  if (cur && !stopFlag) drawScene(cur.s, 1);
+  playing = false; if ("speechSynthesis" in window) speechSynthesis.cancel();
+}
+function stop() { stopFlag = true; if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+async function record(seq, name, offset) {
+  const mimes = ["video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  const mime = mimes.find(t => MediaRecorder.isTypeSupported(t)) || "";
+  const stream = cv.captureStream(30); let ac, src;
+  if (audioBuf) { ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume(); const d = ac.createMediaStreamDestination(); src = ac.createBufferSource(); src.buffer = audioBuf; src.connect(d); stream.addTrack(d.stream.getAudioTracks()[0]); }
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
+  const chunks = []; rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise(r => rec.onstop = r);
+  rec.start(500); if (src && offset < audioBuf.duration) src.start(0, offset);
+  await play(seq, false); await sleep(400); rec.stop(); await done; if (ac) ac.close();
+  if (stopFlag) return false;
+  const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || mime || "video/webm" }));
+  a.download = `${name}.${ext}`; document.body.append(a); a.click(); a.remove(); return true;
+}
+function ready() {
+  if (!scenes.length) { say("Build scenes first.", 1); return false; }
+  if (!window.MediaRecorder) { say("Exporting needs Chrome or Edge on a computer.", 1); return false; }
+  if (playing) { say("Wait for the current playback to finish, or click Stop.", 1); return false; }
+  return true;
+}
+$("prev").addEventListener("click", () => { if (!playing && scenes.length) play(scenes, false); });
+$("prevVo").addEventListener("click", () => { if (!playing && scenes.length) play(scenes, true); });
+$("stop").addEventListener("click", stop);
+$("full").addEventListener("click", async () => {
+  if (!ready()) return; const total = scenes.reduce((a, s) => a + s.dur, 0);
+  say(`Recording the full video (about ${total.toFixed(0)} s). Keep this tab open and visible.`);
+  if (await record(scenes, "vidnest-full-video", 0)) say("Done. Check your downloads folder for vidnest-full-video.");
+});
+$("shorts").addEventListener("click", async () => {
+  if (!ready()) return;
+  if ($("fmt").value !== "v") { $("fmt").value = "v"; setFormat("v"); }
+  const max = +$("smax").value, groups = []; let cur = [], t = 0;
+  for (const s of scenes) { if (cur.length && t + s.dur > max) { groups.push({ seq: cur, off: groups.reduce((a, g) => a + g.len, 0) }); groups[groups.length - 1].len = t; cur = []; t = 0; } cur.push(s); t += s.dur; }
+  if (cur.length) { groups.push({ seq: cur, off: groups.reduce((a, g) => a + g.len, 0), len: t }); }
+  for (let i = 0; i < groups.length; i++) {
+    say(`Recording Short ${i + 1} of ${groups.length}. Keep this tab open and visible.`);
+    if (!await record(groups[i].seq, `vidnest-short-${i + 1}`, groups[i].off)) return;
+  }
+  say(`Done: ${groups.length} Short(s) saved. If only some downloaded, allow multiple downloads for this site.`);
+});
+setFormat("v");
+</script>
+</body>
+</html>
