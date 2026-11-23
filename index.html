@@ -289,32 +289,52 @@ async function exportShort(s, btn) {
   const types = ["video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
   const mime = types.find(t => MediaRecorder.isTypeSupported(t)) || "";
   const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
-  const chunks = []; rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  const done = new Promise(r => rec.onstop = r);
-  btn.disabled = true; await seekTo(s.start); gain.gain.value = 1; drawFrame(c, 720, 1280, s.crop);
-  rec.start(500); v.play();
-  await new Promise(res => {
-    const t = () => {
-      drawFrame(c, 720, 1280, s.crop); paint();
-      say(`Exporting… about ${Math.max(0, s.end - v.currentTime).toFixed(0)} s left. Keep this tab open and visible.`);
-      if (v.currentTime >= s.end || v.ended) return res();
-      requestAnimationFrame(t);
-    }; t();
-  });
-  v.pause(); rec.stop(); await done; btn.disabled = false;
-  const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
-  const name = `short-${shorts.indexOf(s) + 1}.${ext}`, blob = new Blob(chunks, { type: rec.mimeType || mime || "video/webm" });
-  let dl = null;
-  try { dl = window.claude && await window.claude.use("downloads"); } catch (e) { dl = null; }
-  if (dl) {
-    try { await dl.save({ filename: name, data: blob }); say(`Saved ${name}.`); }
-    catch (e) { say(e && e.code === "declined" ? "Save cancelled. Click Export again to retry." : "Couldn’t save the file. Try again.", 1); }
-    return;
+  let rec, blob, name;
+  const chunks = [];
+  btn.disabled = true;
+  try {
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise((resolve, reject) => { rec.onstop = resolve; rec.onerror = e => reject(e.error || new Error("Recording failed")); });
+    await seekTo(s.start); gain.gain.value = 1; drawFrame(c, 720, 1280, s.crop);
+    rec.start(500);
+    await v.play();
+    await new Promise((resolve, reject) => {
+      let finished = false;
+      const watchdog = setTimeout(() => { if (!finished) { finished = true; reject(new Error("Video playback stalled during export. Try again, or use a shorter clip.")); } }, Math.max(10000, (s.end - s.start) * 1500));
+      const t = () => {
+        if (finished) return;
+        drawFrame(c, 720, 1280, s.crop);
+        say(`Exporting… about ${Math.max(0, s.end - v.currentTime).toFixed(0)} s left. Keep this tab open and visible.`);
+        if (v.currentTime >= s.end || v.ended) { finished = true; clearTimeout(watchdog); resolve(); return; }
+        if (v.paused) { finished = true; clearTimeout(watchdog); reject(new Error("Video playback stopped before export finished. Try again.")); return; }
+        requestAnimationFrame(t);
+      };
+      t();
+    });
+    v.pause(); rec.stop(); await done;
+    const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
+    name = `short-${shorts.indexOf(s) + 1}.${ext}`;
+    blob = new Blob(chunks, { type: rec.mimeType || mime || "video/webm" });
+    let dl = null;
+    try { dl = window.claude && await window.claude.use("downloads"); } catch (e) { dl = null; }
+    if (dl) {
+      try { await dl.save({ filename: name, data: blob }); say(`Saved ${name}.`); }
+      catch (e) { say(e && e.code === "declined" ? "Save cancelled. Click Export again to retry." : "Couldn’t save the file. Try again.", 1); }
+      return;
+    }
+    const a = document.createElement("a"), url = URL.createObjectURL(blob);
+    a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    say(`Saved ${name} to your downloads folder.`);
+  } catch (e) {
+    if (rec && rec.state !== "inactive") { try { rec.stop(); } catch (_) {} }
+    v.pause();
+    say(e && e.message ? e.message : "Export failed. Please try again.", 1);
+  } finally {
+    btn.disabled = false;
+    stream.getTracks().forEach(t => t.stop());
   }
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = name; document.body.append(a); a.click(); a.remove();
-  say(`Saved ${name} to your downloads folder.`);
 }
 </script>
 </body>
