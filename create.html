@@ -145,18 +145,40 @@ async function fetchBitmap(url, opts = {}) {
 function setImg(s, res) { if (s.url) URL.revokeObjectURL(s.url); s.bmp = res.bmp; s.url = res.url; }
 async function loadImage(s) {
   s.status = "loading"; s.err = ""; paintCard(s);
-  const f = $("fmt").value, src = $("src").value, tall = f === "v";
+  const tall = $("fmt").value === "v";
+  async function pollinationsAttempt(seed) {
+    const u = `https://image.pollinations.ai/prompt/${encodeURIComponent(s.q + ", high quality photo, no text")}?width=${tall ? 576 : 1024}&height=${tall ? 1024 : 576}&nologo=true&seed=${seed}`;
+    return fetchBitmap(u);
+  }
+  async function pexelsFallback() {
+    let key = $("pkey").value.trim();
+    if (!key) { try { key = localStorage.getItem("vidnest-pexels") || ""; } catch (_) {} }
+    if (!key) throw new Error("AI image service failed. Retry, or add a Pexels API key to enable fallback.");
+    const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(kw(s.q))}&per_page=6&orientation=${tall ? "portrait" : "landscape"}`, { headers: { Authorization: key }, signal: AbortSignal.timeout(25000) });
+    if (!r.ok) throw new Error("AI image service failed and Pexels fallback returned HTTP " + r.status);
+    const photos = (await r.json()).photos || [];
+    if (!photos.length) throw new Error("AI image service failed and Pexels found no matching photos.");
+    const p = photos[Math.floor(Math.random() * Math.min(4, photos.length))];
+    return fetchBitmap(tall ? p.src.portrait : p.src.landscape);
+  }
   try {
     let res;
-    if (src === "ai") {
-      const u = `https://image.pollinations.ai/prompt/${encodeURIComponent(s.q + ", high quality photo, no text")}?width=${tall ? 576 : 1024}&height=${tall ? 1024 : 576}&nologo=true&seed=${Math.floor(Math.random() * 99999)}`;
-      res = await fetchBitmap(u);
-    } else if (src === "stock") {
+    if ($("src").value === "ai") {
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { res = await pollinationsAttempt(Math.floor(Math.random() * 999999)); break; }
+        catch (e) { lastError = e; if (attempt < 2) await sleep(1000 * (attempt + 1)); }
+      }
+      if (!res) {
+        try { res = await pexelsFallback(); }
+        catch (fallbackError) { throw new Error("AI images failed after three attempts. " + (fallbackError.message || lastError.message || "Try again or use your own photo.")); }
+      }
+    } else if ($("src").value === "stock") {
       const key = $("pkey").value.trim(); if (!key) throw new Error("Add your free Pexels key above");
-      const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(kw(s.q))}&per_page=6&orientation=${tall ? "portrait" : "landscape"}`, { headers: { Authorization: key } });
+      const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(kw(s.q))}&per_page=6&orientation=${tall ? "portrait" : "landscape"}`, { headers: { Authorization: key }, signal: AbortSignal.timeout(25000) });
       if (!r.ok) throw new Error("Pexels said HTTP " + r.status);
-      const ph = (await r.json()).photos || []; if (!ph.length) throw new Error("No photo found; change the image idea");
-      const p = ph[Math.floor(Math.random() * Math.min(4, ph.length))];
+      const photos = (await r.json()).photos || []; if (!photos.length) throw new Error("No photo found; change the image idea");
+      const p = photos[Math.floor(Math.random() * Math.min(4, photos.length))];
       res = await fetchBitmap(tall ? p.src.portrait : p.src.landscape);
     } else throw new Error("Use ‘Use my photo’ on this scene or ‘Add my photos’");
     setImg(s, res); s.status = "ok";
