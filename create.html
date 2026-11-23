@@ -132,9 +132,15 @@ function drawScene(s, p) {
 function idle() { if (scenes[0]) drawScene(scenes[0], 0); else { ctx.fillStyle = "#10142b"; ctx.fillRect(0, 0, cv.width, cv.height); } }
 
 // ---------- images ----------
-async function fetchBitmap(url, opts) {
-  const r = await fetch(url, opts); if (!r.ok) throw new Error("HTTP " + r.status);
-  const b = await r.blob(); return { bmp: await createImageBitmap(b), url: URL.createObjectURL(b) };
+async function fetchBitmap(url, opts = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const r = await fetch(url, { ...opts, signal: controller.signal }); if (!r.ok) throw new Error("HTTP " + r.status);
+    const b = await r.blob(); return { bmp: await createImageBitmap(b), url: URL.createObjectURL(b) };
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Image request timed out. Try again or use your own photo.");
+    throw e;
+  } finally { clearTimeout(timer); }
 }
 function setImg(s, res) { if (s.url) URL.revokeObjectURL(s.url); s.bmp = res.bmp; s.url = res.url; }
 async function loadImage(s) {
@@ -255,17 +261,27 @@ function stop() { stopFlag = true; if ("speechSynthesis" in window) speechSynthe
 async function record(seq, name, offset) {
   const mimes = ["video/mp4;codecs=avc1,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
   const mime = mimes.find(t => MediaRecorder.isTypeSupported(t)) || "";
-  const stream = cv.captureStream(30); let ac, src;
-  if (audioBuf) { ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume(); const d = ac.createMediaStreamDestination(); src = ac.createBufferSource(); src.buffer = audioBuf; src.connect(d); stream.addTrack(d.stream.getAudioTracks()[0]); }
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
-  const chunks = []; rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  const done = new Promise(r => rec.onstop = r);
-  rec.start(500); if (src && offset < audioBuf.duration) src.start(0, offset);
-  await play(seq, false); await sleep(400); rec.stop(); await done; if (ac) ac.close();
-  if (stopFlag) return false;
-  const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || mime || "video/webm" }));
-  a.download = `${name}.${ext}`; document.body.append(a); a.click(); a.remove(); return true;
+  const stream = cv.captureStream(30); let ac, src, rec;
+  try {
+    if (audioBuf) { ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume(); const d = ac.createMediaStreamDestination(); src = ac.createBufferSource(); src.buffer = audioBuf; src.connect(d); stream.addTrack(d.stream.getAudioTracks()[0]); }
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : undefined);
+    const chunks = []; rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise((resolve, reject) => { rec.onstop = resolve; rec.onerror = e => reject(e.error || new Error("Recording failed")); });
+    rec.start(500); if (src && offset < audioBuf.duration) src.start(0, offset);
+    await play(seq, false); await sleep(400);
+    if (rec.state !== "inactive") rec.stop(); await done;
+    if (stopFlag) return false;
+    const ext = (rec.mimeType || mime).includes("mp4") ? "mp4" : "webm";
+    const blob = new Blob(chunks, { type: rec.mimeType || mime || "video/webm" }), url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${name}.${ext}`; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000); return true;
+  } catch (e) {
+    stop(); if (rec && rec.state !== "inactive") { try { rec.stop(); } catch (_) {} }
+    say(e && e.message ? e.message : "Video recording failed. Please try again.", 1); return false;
+  } finally {
+    if (ac) { try { await ac.close(); } catch (_) {} }
+    stream.getTracks().forEach(t => t.stop());
+  }
 }
 function ready() {
   if (!scenes.length) { say("Build scenes first.", 1); return false; }
