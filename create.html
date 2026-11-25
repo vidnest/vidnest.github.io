@@ -192,7 +192,28 @@ async function genAll() {
   const bad = scenes.filter(s => s.status === "fail").length;
   say(bad ? `${bad} scene(s) have no image. Read the note on each, fix the image idea, then click New image.` : "Images ready. Preview, then export.", !!bad);
 }
-async function useFile(s, file) { try { setImg(s, { bmp: await createImageBitmap(file), url: URL.createObjectURL(file) }); s.status = "ok"; } catch (e) { s.status = "fail"; s.err = "Couldn’t read that photo"; } paintCard(s); idle(); }
+async function decodePhoto(file) {
+  if (!file || !file.type.startsWith("image/")) throw new Error("Choose a valid image file.");
+  if (file.size > 20 * 1024 * 1024) throw new Error("Image is larger than 20 MB. Please choose a smaller image.");
+  try { return await createImageBitmap(file); }
+  catch (_) {
+    return await new Promise((resolve, reject) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => { try { const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext("2d").drawImage(img,0,0); c.toBlob(b=>{ URL.revokeObjectURL(url); if(!b)return reject(new Error("Could not decode this image.")); createImageBitmap(b).then(resolve,reject); },"image/png"); } catch(e) { URL.revokeObjectURL(url); reject(e); } };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("This image could not be opened. Try JPG or PNG.")); };
+      img.src=url;
+    });
+  }
+}
+async function useFile(s, file) {
+  try {
+    if (!file) return;
+    s.status = "loading"; s.err = "Reading your photo…"; paintCard(s);
+    const bmp = await decodePhoto(file);
+    setImg(s, { bmp, url: URL.createObjectURL(file) }); s.status = "ok"; s.err = "";
+  } catch (e) { s.status = "fail"; s.err = e.message || "Couldn’t read that photo"; }
+  paintCard(s); idle();
+}
 
 // ---------- scenes UI ----------
 function paintCard(s) {
@@ -228,11 +249,16 @@ $("list").addEventListener("click", e => {
   if (a === "img") loadImage(s);
   if (a === "del") { scenes = scenes.filter(x => x !== s); render(); }
 });
-$("list").addEventListener("change", e => { const s = sceneOf(e.target); if (s && e.target.dataset.a === "file" && e.target.files[0]) useFile(s, e.target.files[0]); });
+$("list").addEventListener("change", e => { const s = sceneOf(e.target); if (s && e.target.dataset.a === "file" && e.target.files[0]) { useFile(s, e.target.files[0]); e.target.value=""; } });
 $("photos").addEventListener("change", async e => {
-  const fs = [...e.target.files]; if (!fs.length || !scenes.length) { say("Build scenes first, then add photos.", 1); return; }
-  for (let i = 0; i < scenes.length; i++) await useFile(scenes[i], fs[i % fs.length]);
-  say(`Added ${fs.length} photo(s) across ${scenes.length} scenes.`);
+  const fs = [...e.target.files]; e.target.value="";
+  if (!fs.length) return;
+  if (!scenes.length) { say("Build scenes first, then add photos.", 1); return; }
+  const valid=fs.filter(f=>f.type.startsWith("image/"));
+  if(!valid.length){say("No supported image files selected. Choose JPG, PNG, WEBP, or another browser-supported image.",1);return;}
+  for (let i = 0; i < scenes.length; i++) await useFile(scenes[i], valid[i % valid.length]);
+  const failed=scenes.filter(s=>s.status==="fail").length;
+  say(failed ? `${failed} photo(s) could not be loaded. Check the scene error and try JPG or PNG.` : `Loaded ${valid.length} photo(s) across ${scenes.length} scenes.`, !!failed);
 });
 $("build").addEventListener("click", () => {
   const blocks = splitScript($("script").value);
@@ -250,18 +276,27 @@ $("pkey").addEventListener("change", () => { try { localStorage.setItem("vidnest
 
 // ---------- voice ----------
 function loadVoices() {
-  if (!("speechSynthesis" in window)) return;
+  if (!("speechSynthesis" in window)) { $("voice").innerHTML = "<option>Voice unavailable in this browser</option>"; return; }
   voices = speechSynthesis.getVoices().sort((a, b) => a.lang.localeCompare(b.lang));
-  const sel = $("voice"); sel.replaceChildren();
+  const sel = $("voice"), previous = sel.value; sel.replaceChildren();
+  if (!voices.length) { const o=document.createElement("option"); o.value=""; o.textContent="Loading browser voices…"; sel.append(o); return; }
   voices.forEach(x => { const o = document.createElement("option"); o.value = x.voiceURI; o.textContent = `${x.name} (${x.lang})`; sel.append(o); });
-  const pref = voices.find(x => /^en-IN/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang)); if (pref) sel.value = pref.voiceURI;
+  const pref = voices.find(x => /^en-IN/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang));
+  if (voices.some(x=>x.voiceURI===previous)) sel.value=previous; else if(pref) sel.value=pref.voiceURI;
 }
-if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
+if ("speechSynthesis" in window) { speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); setTimeout(loadVoices, 250); setTimeout(loadVoices, 1000); }
 function speakAsync(text) {
-  return new Promise(res => {
-    if (!("speechSynthesis" in window)) return res();
+  return new Promise((resolve, reject) => {
+    if (!("speechSynthesis" in window)) return reject(new Error("Browser speech is not supported. Try Chrome or Edge."));
+    if (!text || !text.trim()) return resolve();
+    speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text), vo = voices.find(x => x.voiceURI === $("voice").value);
-    if (vo) { u.voice = vo; u.lang = vo.lang; } u.rate = +$("rate").value; u.onend = u.onerror = () => res(); speechSynthesis.speak(u);
+    if (vo) { u.voice = vo; u.lang = vo.lang; }
+    u.rate = +$("rate").value || 1;
+    let settled=false; const finish=(err)=>{if(settled)return;settled=true;clearTimeout(timer);err?reject(err):resolve();};
+    const timer=setTimeout(()=>finish(new Error("Voice playback timed out. Try again or select another voice.")), Math.max(15000, text.length*180));
+    u.onend=()=>finish(); u.onerror=e=>finish(new Error("Voice playback failed: "+(e.error||"speech error")));
+    try { speechSynthesis.speak(u); } catch(e) { finish(e); }
   });
 }
 $("audio").addEventListener("change", async e => {
@@ -275,7 +310,7 @@ async function play(seq, voice) {
   stopFlag = false; playing = true; let cur = null;
   const loop = () => { if (!playing) return; if (cur) drawScene(cur.s, Math.min(1, (performance.now() - cur.t0) / (cur.s.dur * 1000))); requestAnimationFrame(loop); };
   loop();
-  for (let i = 0; i < seq.length && !stopFlag; i++) { cur = { s: seq[i], t0: performance.now() }; await Promise.all([voice ? speakAsync(seq[i].text) : 0, wait(seq[i].dur * 1000)]); }
+  for (let i = 0; i < seq.length && !stopFlag; i++) { cur = { s: seq[i], t0: performance.now() }; const started=performance.now(); if(voice){try{await speakAsync(seq[i].text);}catch(e){say(e.message,1);stopFlag=true;break;}} const remaining=seq[i].dur*1000-(performance.now()-started); if(remaining>0)await wait(remaining); }
   if (cur && !stopFlag) drawScene(cur.s, 1);
   playing = false; if ("speechSynthesis" in window) speechSynthesis.cancel();
 }
