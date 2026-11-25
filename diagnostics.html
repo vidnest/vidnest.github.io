@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VidNest Health Check</title>
+<style>
+:root{color-scheme:light dark;--bg:#10142b;--card:#1a2040;--ink:#eef0fb;--soft:#a4abcf;--line:#303968;--ok:#43c78b;--bad:#ff8a80;--accent:#f5b301}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui}main{max-width:820px;margin:auto;padding:24px 16px 60px}h1{font-size:2rem;margin:0}p{color:var(--soft)}a{color:var(--ink)}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}.row{display:flex;gap:10px;flex-wrap:wrap}button{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer}button.primary{background:var(--accent);color:#151515;border:0;font-weight:700}button:disabled{opacity:.6}.test{display:flex;gap:12px;align-items:flex-start;border-top:1px solid var(--line);padding:12px 0}.test:first-child{border-top:0}.status{font-weight:700;min-width:105px}.ok{color:var(--ok)}.fail{color:var(--bad)}.pending{color:var(--soft)}.desc{color:var(--soft);font-size:.92rem}input[type=file]{max-width:100%}
+</style></head><body><main>
+<h1>VidNest Health Check</h1><p>Run these tests in Chrome or Edge on the computer you will use to create videos. This page checks your local browser and the external image service; it does not upload your selected test photo.</p>
+<div class="card"><div class="row"><button class="primary" id="run">Run browser checks</button><button id="voice">Test voice out loud</button><button id="image">Test AI image service</button></div>
+<div id="results" aria-live="polite">
+<div class="test"><span class="status pending">Not tested</span><div><b>Browser support</b><div class="desc">Canvas, file decoding, media recorder and audio APIs.</div></div></div>
+<div class="test"><span class="status pending">Not tested</span><div><b>Voice list</b><div class="desc">Check whether this browser has voices available.</div></div></div>
+<div class="test"><span class="status pending">Not tested</span><div><b>Video export</b><div class="desc">Check MediaRecorder and supported WebM/MP4 recording types.</div></div></div>
+<div class="test"><span class="status pending">Not tested</span><div><b>AI image service</b><div class="desc">Try fetching and decoding one generated image. Network/CORS restrictions may cause failure.</div></div></div>
+<div class="test"><span class="status pending">Not tested</span><div><b>Photo upload</b><div class="desc">Choose a local photo to verify it can be decoded by this browser.</div></div></div>
+</div></div>
+<div class="card"><h2>Test your own image upload</h2><input type="file" id="photo" accept="image/*"><p id="photoresult" class="desc">This test reads the image locally. It does not send it to a server.</p></div>
+<div class="card"><h2>Important before demoing</h2><p>In the Script-to-Video Studio, built-in browser voice is preview-only and is not mixed into exported video. Export includes uploaded audio files, not the browser's speech. Do not present browser narration as embedded export audio.</p><p>For AI image failures, use your own uploaded photo or the Pexels option with your own API key as a fallback. AI image services are external and can fail or change availability.</p><div class="row"><a href="create.html">← Script-to-Video Studio</a><a href="index.html">← VidNest Home</a></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function setResult(i,label,desc,good){const row=$("results").children[i];row.querySelector(".status").textContent=label;row.querySelector(".status").className="status "+(good===null?"pending":good?"ok":"fail");row.querySelector(".desc").textContent=desc;}
+$("run").onclick=async()=>{
+$("run").disabled=true;
+setResult(0,"Checking…","Running browser feature checks",null);
+const checks={canvas:!!document.createElement("canvas").getContext("2d"), file:!!window.createImageBitmap, recorder:!!window.MediaRecorder, audio:!!(window.AudioContext||window.webkitAudioContext)};
+const pass=checks.canvas&&checks.file&&checks.recorder&&checks.audio;
+setResult(0,pass?"PASS":"FAIL",Object.entries(checks).map(([k,v])=>k+": "+(v?"available":"missing")).join(" · "),pass);
+const v=window.speechSynthesis? speechSynthesis.getVoices():[];
+setResult(1,v.length?"PASS":"WARN",v.length?v.length+" voice(s) available. Voice playback is tested separately by the button above.":"No browser voices returned yet. Wait a moment or try the voice test.",v.length>0);
+const types=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4;codecs=avc1,mp4a.40.2"];
+const supported=window.MediaRecorder?types.filter(t=>MediaRecorder.isTypeSupported(t)): [];
+setResult(2,supported.length?"PASS":"FAIL",supported.length?"Supported formats: "+supported.join(", "):"No supported MediaRecorder format detected.",supported.length>0);
+$("run").disabled=false;
+};
+$("voice").onclick=()=>{
+if(!window.speechSynthesis){setResult(1,"FAIL","Speech synthesis is unavailable in this browser.",false);return;}
+speechSynthesis.cancel();
+const u=new SpeechSynthesisUtterance("VidNest voice check. If you can hear this clearly, browser narration is working.");
+u.rate=1;u.onend=()=>setResult(1,"PASS","Voice test completed. Preview voice works in this browser; this does not test exported-video audio.",true);
+u.onerror=e=>setResult(1,"FAIL","Voice test failed: "+(e.error||"speech error"),false);
+setResult(1,"Testing…","Speak now. This checks preview playback only.",null);
+try{speechSynthesis.speak(u);}catch(e){setResult(1,"FAIL",e.message,false);}
+};
+$("image").onclick=async()=>{
+setResult(3,"Testing…","Requesting one AI image from Pollinations. This can take up to 30 seconds.",null);
+const prompt="cinematic realistic close up of a small green plant in sunlight";
+const url="https://image.pollinations.ai/prompt/"+encodeURIComponent(prompt)+"?width=512&height=512&nologo=true&seed=4815";
+try{
+const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+const r=await fetch(url,{signal:controller.signal});clearTimeout(timer);
+if(!r.ok)throw new Error("Service returned HTTP "+r.status);
+const blob=await r.blob(),bmp=await createImageBitmap(blob);
+setResult(3,"PASS","AI image received and decoded ("+bmp.width+" × "+bmp.height+").",true);bmp.close();
+}catch(e){setResult(3,"FAIL",e.name==="AbortError"?"Image request timed out.":"Image service/network/CORS failed: "+(e.message||e),false);}
+};
+$("photo").onchange=async e=>{
+const f=e.target.files[0];if(!f)return;
+try{const b=await createImageBitmap(f);$("photoresult").textContent="PASS — image decoded successfully: "+f.name+" ("+b.width+" × "+b.height+"). File remains on your device.";b.close();}
+catch(err){$("photoresult").textContent="FAIL — browser could not decode this file. Try JPG or PNG.";}
+};
+</script></body></html>
