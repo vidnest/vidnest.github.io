@@ -29,7 +29,18 @@ const v=window.speechSynthesis? speechSynthesis.getVoices():[];
 setResult(1,v.length?"PASS":"WARN",v.length?v.length+" voice(s) available. Voice playback is tested separately by the button above.":"No browser voices returned yet. Wait a moment or try the voice test.",v.length>0);
 const types=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4;codecs=avc1,mp4a.40.2"];
 const supported=window.MediaRecorder?types.filter(t=>MediaRecorder.isTypeSupported(t)): [];
-setResult(2,supported.length?"PASS":"FAIL",supported.length?"Supported formats: "+supported.join(", "):"No supported MediaRecorder format detected.",supported.length>0);
+if(!supported.length){setResult(2,"FAIL","No supported MediaRecorder format detected.",false);$("run").disabled=false;return;}
+setResult(2,"Testing…","Starting a short canvas recording test (2 seconds).",null);
+try{
+ const canvas=document.createElement("canvas");canvas.width=320;canvas.height=568;const c=canvas.getContext("2d");
+ const stream=canvas.captureStream(15),mime=supported[0],rec=new MediaRecorder(stream,{mimeType:mime});
+ const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+ const done=new Promise((resolve,reject)=>{rec.onstop=resolve;rec.onerror=e=>reject(e.error||new Error("recorder failed"));});
+ rec.start(250);let frame=0;const paint=()=>{if(rec.state!=="recording")return;c.fillStyle=frame++%2?"#202040":"#10142b";c.fillRect(0,0,canvas.width,canvas.height);c.fillStyle="#fff";c.font="20px sans-serif";c.fillText("VidNest export test",24,80);requestAnimationFrame(paint);};paint();
+ await new Promise(r=>setTimeout(r,2000));rec.stop();await done;stream.getTracks().forEach(t=>t.stop());
+ const blob=new Blob(chunks,{type:rec.mimeType||mime});if(blob.size<1000)throw new Error("Recording was empty or too small");
+ setResult(2,"PASS","Recorded a 2-second test clip ("+Math.round(blob.size/1024)+" KB) using "+(rec.mimeType||mime)+". This verifies browser recording, not full scene export.",true);
+}catch(err){setResult(2,"FAIL","Canvas recording test failed: "+(err.message||err),false);}
 $("run").disabled=false;
 };
 $("voice").onclick=()=>{
